@@ -19,6 +19,7 @@ import { CustomOAIBYOKModelProvider } from './customOAIProvider';
 import { GeminiNativeBYOKLMProvider } from './geminiNativeProvider';
 import { OllamaLMProvider } from './ollamaProvider';
 import { OAIBYOKLMProvider } from './openAIProvider';
+import { OpenCodeLMProvider } from './openCodeProvider';
 import { OpenRouterLMProvider } from './openRouterProvider';
 import { XAIBYOKLMProvider } from './xAIProvider';
 
@@ -60,6 +61,7 @@ export class BYOKContrib extends Disposable implements IExtensionContribution {
 			this._providers.set(OAIBYOKLMProvider.providerName.toLowerCase(), instantiationService.createInstance(OAIBYOKLMProvider, knownModels[OAIBYOKLMProvider.providerName], this._byokStorageService));
 			this._providers.set(OpenRouterLMProvider.providerName.toLowerCase(), instantiationService.createInstance(OpenRouterLMProvider, this._byokStorageService));
 			this._providers.set(AzureBYOKModelProvider.providerName.toLowerCase(), instantiationService.createInstance(AzureBYOKModelProvider, this._byokStorageService));
+			this._providers.set(OpenCodeLMProvider.providerName.toLowerCase(), instantiationService.createInstance(OpenCodeLMProvider, this._byokStorageService));
 			this._providers.set(CustomOAIBYOKModelProvider.providerName.toLowerCase(), instantiationService.createInstance(CustomOAIBYOKModelProvider, this._byokStorageService));
 
 			for (const [providerName, provider] of this._providers) {

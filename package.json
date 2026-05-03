@@ -1801,12 +1801,41 @@
 				"vendor": "openai",
 				"displayName": "OpenAI",
 				"configuration": {
+					"type": "object",
 					"properties": {
 						"apiKey": {
 							"type": "string",
 							"secret": true,
 							"description": "API key for OpenAI",
 							"title": "API Key"
+						},
+						"url": {
+							"type": "string",
+							"description": "Custom base URL for the OpenAI API. If not provided, defaults to the official OpenAI API endpoint.",
+							"title": "URL"
+						}
+					},
+					"required": [
+						"apiKey"
+					]
+				}
+			},
+			{
+				"vendor": "opencode",
+				"displayName": "OpenCode",
+				"configuration": {
+					"type": "object",
+					"properties": {
+						"apiKey": {
+							"type": "string",
+							"secret": true,
+							"description": "API key for OpenCode",
+							"title": "API Key"
+						},
+						"url": {
+							"type": "string",
+							"description": "Custom base URL for the OpenCode API. Defaults to https://opencode.ai/zen/go/v1 if not provided.",
+							"title": "URL"
 						}
 					},
 					"required": [

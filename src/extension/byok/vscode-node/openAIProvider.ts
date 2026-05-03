@@ -9,8 +9,12 @@ import { IFetcherService } from '../../../platform/networking/common/fetcherServ
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { BYOKKnownModels } from '../common/byokProvider';
-import { AbstractOpenAICompatibleLMProvider } from './abstractLanguageModelChatProvider';
+import { AbstractOpenAICompatibleLMProvider, LanguageModelChatConfiguration } from './abstractLanguageModelChatProvider';
 import { IBYOKStorageService } from './byokStorageService';
+
+export interface OpenAIConfig extends LanguageModelChatConfiguration {
+	url?: string;
+}
 
 export class OAIBYOKLMProvider extends AbstractOpenAICompatibleLMProvider {
 	public static readonly providerName = 'OpenAI';
@@ -37,8 +41,9 @@ export class OAIBYOKLMProvider extends AbstractOpenAICompatibleLMProvider {
 		);
 	}
 
-	protected override getModelsBaseUrl(): string {
-		return 'https://api.openai.com/v1';
+	protected override getModelsBaseUrl(configuration: OpenAIConfig | undefined): string {
+		const url = configuration?.url ?? 'https://api.openai.com/v1';
+		return url.replace(/\/$/, '');
 	}
 
 	protected override getModelInfo(modelId: string, modelUrl: string): IChatModelInformation {
