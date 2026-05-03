@@ -660,6 +660,10 @@ export class CopilotLanguageModelWrapper extends Disposable {
 				const err = new Error(result.reason);
 				err.name = 'ChatRateLimited';
 				throw err;
+			} else if (result.type === ChatFetchResponseType.Length) {
+				// The model's response was truncated due to the token limit. Content was already
+				// streamed token-by-token via the callback, so return gracefully with what was received.
+				return;
 			}
 
 			throw new Error(result.reason);
