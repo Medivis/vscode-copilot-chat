@@ -252,13 +252,15 @@ export class OpenAIEndpoint extends ChatEndpoint {
 			}
 			return body;
 		} else {
-			// Handle CAPI: provide callback for thinking data processing
-			const callback: RawMessageConversionCallback = (out, data) => {
-				if (data && data.id) {
-					out.cot_id = data.id;
-					out.cot_summary = Array.isArray(data.text) ? data.text.join('') : data.text;
-				}
-			};
+			// Only include CAPI thinking metadata when the model supports thinking.
+			const callback = this.modelMetadata.capabilities.supports.thinking
+				? ((out, data) => {
+					if (data && data.id) {
+						out.cot_id = data.id;
+						out.cot_summary = Array.isArray(data.text) ? data.text.join('') : data.text;
+					}
+				}) satisfies RawMessageConversionCallback
+				: undefined;
 			const body = createCapiRequestBody(options, this.model, callback);
 			return body;
 		}
@@ -281,6 +283,26 @@ export class OpenAIEndpoint extends ChatEndpoint {
 		}
 
 		if (body) {
+			if (Array.isArray(body.messages)) {
+				for (const message of body.messages) {
+					if (!message || typeof message !== 'object') {
+						continue;
+					}
+
+					delete message.cot_id;
+					delete message.cot_summary;
+					delete message.reasoning_opaque;
+					delete message.reasoning_text;
+					delete message.copilot_cache_control;
+					delete message.copilot_references;
+					delete message.copilot_confirmations;
+
+					if (message.role === 'assistant' && !('reasoning_content' in message)) {
+						message.reasoning_content = null;
+					}
+				}
+			}
+
 			if (this.modelMetadata.capabilities.supports.thinking) {
 				delete body.temperature;
 				body['max_completion_tokens'] = body.max_tokens;
