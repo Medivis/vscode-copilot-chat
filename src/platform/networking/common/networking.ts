@@ -63,6 +63,7 @@ const requestTimeoutMs = 30 * 1000; // 30 seconds
 export interface IEndpointBody {
 	/** General or completions: */
 	tools?: (OpenAiFunctionTool | OpenAiResponsesFunctionTool | AnthropicMessagesTool)[];
+	session_id?: string;
 	model?: string;
 	previous_response_id?: string;
 	max_tokens?: number;

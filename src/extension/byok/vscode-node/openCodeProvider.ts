@@ -66,7 +66,8 @@ export class OpenCodeLMProvider extends AbstractOpenAICompatibleLMProvider {
 			vision: true,
 			maxInputTokens: OpenCodeLMProvider.DEFAULT_CONTEXT_WINDOW - OpenCodeLMProvider.DEFAULT_MAX_OUTPUT_TOKENS,
 			maxOutputTokens: OpenCodeLMProvider.DEFAULT_MAX_OUTPUT_TOKENS,
-			supportsReasoningEffort: ['none', 'medium', 'high']
+			supportsReasoningEffort: ['none', 'medium', 'high'],
+			thinking: true,
 		};
 	}
 

@@ -137,6 +137,83 @@ describe('OpenAIEndpoint - Reasoning Properties', () => {
 			expect(messages[1].cot_id).toBe('reasoning-456');
 			expect(messages[1].cot_summary).toBe('complex reasoning here');
 		});
+
+		it('should inject session_id from conversationId', () => {
+			const endpoint = instaService.createInstance(OpenAIEndpoint,
+				{
+					...modelMetadata,
+					supported_endpoints: [ModelSupportedEndpoint.ChatCompletions]
+				},
+				'test-api-key',
+				'https://api.openai.com/v1/chat/completions');
+
+			const options = {
+				...createTestOptions([{ role: Raw.ChatRole.User, content: [{ type: Raw.ChatCompletionContentPartKind.Text, text: 'hi' }] }]),
+				conversationId: 'my-session-123'
+			};
+
+			const body = endpoint.createRequestBody(options);
+
+			expect(body.session_id).toBe('my-session-123');
+		});
+
+		it('should map cot_summary to reasoning_content for assistant tool calls', () => {
+			const endpoint = instaService.createInstance(OpenAIEndpoint,
+				{
+					...modelMetadata,
+					supported_endpoints: [ModelSupportedEndpoint.ChatCompletions]
+				},
+				'test-api-key',
+				'https://api.openai.com/v1/chat/completions');
+
+			const body = {
+				messages: [{
+					role: 'assistant',
+					content: 'I will run a tool now.',
+					tool_calls: [{
+						id: 'call_1',
+						type: 'function',
+						function: { name: 'example_tool', arguments: '{}' }
+					}],
+					cot_id: 'cot_123',
+					cot_summary: 'reasoning summary from stream'
+				}]
+			};
+
+			endpoint.interceptBody(body as any);
+
+			const firstMessage = (body.messages as any[])[0];
+			expect(firstMessage.reasoning_content).toBe('reasoning summary from stream');
+			expect(firstMessage.cot_id).toBeUndefined();
+			expect(firstMessage.cot_summary).toBeUndefined();
+		});
+
+		it('should keep assistant tool-call reasoning_content present even when no summary is available', () => {
+			const endpoint = instaService.createInstance(OpenAIEndpoint,
+				{
+					...modelMetadata,
+					supported_endpoints: [ModelSupportedEndpoint.ChatCompletions]
+				},
+				'test-api-key',
+				'https://api.openai.com/v1/chat/completions');
+
+			const body = {
+				messages: [{
+					role: 'assistant',
+					content: '',
+					tool_calls: [{
+						id: 'call_2',
+						type: 'function',
+						function: { name: 'example_tool', arguments: '{"q":"x"}' }
+					}]
+				}]
+			};
+
+			endpoint.interceptBody(body as any);
+
+			const firstMessage = (body.messages as any[])[0];
+			expect(firstMessage.reasoning_content).toBe('');
+		});
 	});
 
 	describe('Responses API mode (useResponsesApi = true)', () => {
@@ -182,6 +259,22 @@ describe('OpenAIEndpoint - Reasoning Properties', () => {
 			const body = endpoint.createRequestBody(options);
 
 			expect(body.reasoning).toBeUndefined(); // Should be removed
+		});
+
+		it('should inject session_id from conversationId', () => {
+			const endpoint = instaService.createInstance(OpenAIEndpoint,
+				modelMetadata,
+				'test-api-key',
+				'https://api.openai.com/v1/chat/completions');
+
+			const options = {
+				...createTestOptions([{ role: Raw.ChatRole.User, content: [{ type: Raw.ChatCompletionContentPartKind.Text, text: 'hi' }] }]),
+				conversationId: 'my-session-123'
+			};
+
+			const body = endpoint.createRequestBody(options);
+
+			expect(body.session_id).toBe('my-session-123');
 		});
 	});
 });

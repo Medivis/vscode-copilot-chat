@@ -111,6 +111,57 @@ export class OpenAIEndpoint extends ChatEndpoint {
 	private static readonly _maxCustomHeaderCount = 20;
 
 	private readonly _customHeaders: Record<string, string>;
+
+	private static _extractReasoningContent(message: Record<string, unknown>): string | undefined {
+		const directReasoning = message.reasoning_content;
+		if (typeof directReasoning === 'string' && directReasoning.length > 0) {
+			return directReasoning;
+		}
+
+		const cotSummary = message.cot_summary;
+		if (typeof cotSummary === 'string' && cotSummary.length > 0) {
+			return cotSummary;
+		}
+
+		const reasoningText = message.reasoning_text;
+		if (typeof reasoningText === 'string' && reasoningText.length > 0) {
+			return reasoningText;
+		}
+
+		const reasoningDetails = message.reasoning_details;
+		if (Array.isArray(reasoningDetails)) {
+			const detailsText = reasoningDetails
+				.map(detail => {
+					if (!detail || typeof detail !== 'object') {
+						return undefined;
+					}
+
+					const asRecord = detail as Record<string, unknown>;
+					if (asRecord.type === 'reasoning.text' && typeof asRecord.text === 'string') {
+						return asRecord.text;
+					}
+					if (asRecord.type === 'reasoning.summary' && typeof asRecord.summary === 'string') {
+						return asRecord.summary;
+					}
+					if (typeof asRecord.text === 'string') {
+						return asRecord.text;
+					}
+					if (typeof asRecord.summary === 'string') {
+						return asRecord.summary;
+					}
+					return undefined;
+				})
+				.filter((part): part is string => !!part)
+				.join('');
+
+			if (detailsText.length > 0) {
+				return detailsText;
+			}
+		}
+
+		return undefined;
+	}
+
 	constructor(
 		_modelMetadata: IChatModelInformation,
 		protected readonly _apiKey: string,
@@ -235,10 +286,14 @@ export class OpenAIEndpoint extends ChatEndpoint {
 	}
 
 	override createRequestBody(options: ICreateEndpointBodyOptions): IEndpointBody {
+		const sessionId = options.conversationId ?? options.telemetryProperties?.conversationId;
 		if (this.useResponsesApi) {
 			// Handle Responses API: customize the body directly
 			options.ignoreStatefulMarker = false;
 			const body = super.createRequestBody(options);
+			if (sessionId) {
+				body.session_id = sessionId;
+			}
 			body.store = true;
 			body.n = undefined;
 			body.stream_options = undefined;
@@ -262,6 +317,9 @@ export class OpenAIEndpoint extends ChatEndpoint {
 				}) satisfies RawMessageConversionCallback
 				: undefined;
 			const body = createCapiRequestBody(options, this.model, callback);
+			if (sessionId) {
+				body.session_id = sessionId;
+			}
 			return body;
 		}
 	}
@@ -289,6 +347,8 @@ export class OpenAIEndpoint extends ChatEndpoint {
 						continue;
 					}
 
+					const reasoningContent = OpenAIEndpoint._extractReasoningContent(message);
+
 					delete message.cot_id;
 					delete message.cot_summary;
 					delete message.reasoning_opaque;
@@ -297,8 +357,13 @@ export class OpenAIEndpoint extends ChatEndpoint {
 					delete message.copilot_references;
 					delete message.copilot_confirmations;
 
-					if (message.role === 'assistant' && !('reasoning_content' in message)) {
-						message.reasoning_content = null;
+					if (message.role === 'assistant') {
+						if (reasoningContent) {
+							message.reasoning_content = reasoningContent;
+						} else if (!('reasoning_content' in message) && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+							// Some providers require assistant tool-call messages to include reasoning_content when thinking is enabled.
+							message.reasoning_content = '';
+						}
 					}
 				}
 			}
