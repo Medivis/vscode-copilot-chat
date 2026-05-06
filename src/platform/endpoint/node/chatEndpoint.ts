@@ -46,9 +46,10 @@ export async function defaultChatResponseProcessor(
 	expectedNumChoices: number,
 	finishCallback: FinishedCallback,
 	telemetryData: TelemetryData,
-	cancellationToken?: CancellationToken | undefined
+	cancellationToken?: CancellationToken | undefined,
+	options?: { extractThinkTags?: boolean }
 ) {
-	const processor = await SSEProcessor.create(logService, telemetryService, expectedNumChoices, response, cancellationToken);
+	const processor = await SSEProcessor.create(logService, telemetryService, expectedNumChoices, response, cancellationToken, options);
 	const finishedCompletions = processor.processSSE(finishCallback);
 	const chatCompletions = AsyncIterableObject.map(finishedCompletions, (solution) => {
 		const loggedReason = solution.reason ?? 'client-trimmed';

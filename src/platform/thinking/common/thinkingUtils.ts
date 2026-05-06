@@ -18,6 +18,9 @@ function getThinkingDeltaText(thinking: RawThinkingDelta | undefined): string | 
 	if (thinking.thinking) {
 		return thinking.thinking;
 	}
+	if (thinking.thinking_content) {
+		return thinking.thinking_content;
+	}
 	// Handle OpenRouter reasoning_details format
 	if (thinking.reasoning_details && thinking.reasoning_details.length > 0) {
 		const texts: string[] = [];

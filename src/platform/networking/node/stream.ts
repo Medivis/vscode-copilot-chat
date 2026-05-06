@@ -218,6 +218,83 @@ interface ExtendedChoiceJSON extends ChoiceJSON {
 }
 
 /**
+ * Stateful extractor for `<think>...</think>` tags embedded in streaming content deltas.
+ * Used to separate Ollama-style inline thinking content from regular response text.
+ */
+export class ThinkTagExtractor {
+	private _inThink = false;
+	private _buffer = '';
+
+	private static readonly _OPEN_TAG = '<think>';
+	private static readonly _CLOSE_TAG = '</think>';
+
+	/**
+	 * Process a content chunk, stripping `<think>` blocks from the content
+	 * and returning them separately as thinking text.
+	 */
+	extract(content: string): { content: string; thinking?: string } {
+		this._buffer += content;
+
+		let outputContent = '';
+		let outputThinking = '';
+
+		while (this._buffer.length > 0) {
+			if (!this._inThink) {
+				const openIdx = this._buffer.indexOf(ThinkTagExtractor._OPEN_TAG);
+				if (openIdx === -1) {
+					// No opening tag – check if the tail could be a partial tag
+					const partialLen = this._partialMatchLength(this._buffer, ThinkTagExtractor._OPEN_TAG);
+					if (partialLen > 0) {
+						outputContent += this._buffer.slice(0, this._buffer.length - partialLen);
+						this._buffer = this._buffer.slice(this._buffer.length - partialLen);
+					} else {
+						outputContent += this._buffer;
+						this._buffer = '';
+					}
+					break;
+				}
+				outputContent += this._buffer.slice(0, openIdx);
+				this._buffer = this._buffer.slice(openIdx + ThinkTagExtractor._OPEN_TAG.length);
+				this._inThink = true;
+			} else {
+				const closeIdx = this._buffer.indexOf(ThinkTagExtractor._CLOSE_TAG);
+				if (closeIdx === -1) {
+					// No closing tag – check for partial close tag at tail
+					const partialLen = this._partialMatchLength(this._buffer, ThinkTagExtractor._CLOSE_TAG);
+					if (partialLen > 0) {
+						outputThinking += this._buffer.slice(0, this._buffer.length - partialLen);
+						this._buffer = this._buffer.slice(this._buffer.length - partialLen);
+					} else {
+						outputThinking += this._buffer;
+						this._buffer = '';
+					}
+					break;
+				}
+				outputThinking += this._buffer.slice(0, closeIdx);
+				this._buffer = this._buffer.slice(closeIdx + ThinkTagExtractor._CLOSE_TAG.length);
+				this._inThink = false;
+			}
+		}
+
+		return {
+			content: outputContent,
+			thinking: outputThinking || undefined,
+		};
+	}
+
+	/** Returns how many characters at the end of `text` could be the start of `tag`. */
+	private _partialMatchLength(text: string, tag: string): number {
+		const maxLen = Math.min(tag.length - 1, text.length);
+		for (let len = maxLen; len > 0; len--) {
+			if (tag.startsWith(text.slice(-len))) {
+				return len;
+			}
+		}
+		return 0;
+	}
+}
+
+/**
  * Processes an HTTP request containing what is assumed to be an SSE stream of
  * OpenAI API data. Yields a stream of `FinishedCompletion` objects, each as
  * soon as it's finished.
@@ -235,6 +312,7 @@ export class SSEProcessor {
 	private readonly functionCalls: Record<string, APIJsonDataStreaming | null> = {};
 	private readonly toolCalls = new StreamingToolCalls();
 	private functionCallName: string | undefined = undefined;
+	private readonly _thinkTagExtractor: ThinkTagExtractor | undefined;
 
 	private constructor(
 		private readonly logService: ILogService,
@@ -242,15 +320,21 @@ export class SSEProcessor {
 		private readonly expectedNumChoices: number,
 		private readonly response: Response,
 		private readonly body: DestroyableStream<string>,
-		private readonly cancellationToken?: CancellationToken
-	) { }
+		private readonly cancellationToken?: CancellationToken,
+		options?: { extractThinkTags?: boolean }
+	) {
+		if (options?.extractThinkTags) {
+			this._thinkTagExtractor = new ThinkTagExtractor();
+		}
+	}
 
 	static async create(
 		logService: ILogService,
 		telemetryService: ITelemetryService,
 		expectedNumChoices: number,
 		response: Response,
-		cancellationToken?: CancellationToken
+		cancellationToken?: CancellationToken,
+		options?: { extractThinkTags?: boolean }
 	) {
 		const body = response.body.pipeThrough(new TextDecoderStream());
 		return new SSEProcessor(
@@ -259,7 +343,8 @@ export class SSEProcessor {
 			expectedNumChoices,
 			response,
 			body,
-			cancellationToken
+			cancellationToken,
+			options
 		);
 	}
 
@@ -423,12 +508,30 @@ export class SSEProcessor {
 				}
 
 				for (let i = 0; i < json.choices.length; i++) {
-					const choice = json.choices[i];
+					let choice = json.choices[i];
 
 					this.logChoice(choice);
 
+					// Extract <think> tags from delta content for providers like Ollama that
+					// embed thinking inline rather than using a dedicated field.
+					let extractedThinkingText: string | undefined;
+					if (this._thinkTagExtractor && choice.delta?.content) {
+						const extracted = this._thinkTagExtractor.extract(choice.delta.content);
+						extractedThinkingText = extracted.thinking;
+						choice = { ...choice, delta: { ...choice.delta, content: extracted.content } };
+					}
 
-					const thinkingDelta = extractThinkingDeltaFromChoice(choice);
+					let thinkingDelta = extractThinkingDeltaFromChoice(choice);
+
+					// Merge inline <think> tag text with any native thinking field
+					if (extractedThinkingText) {
+						if (thinkingDelta) {
+							const existingText = Array.isArray(thinkingDelta.text) ? thinkingDelta.text : (thinkingDelta.text ? [thinkingDelta.text] : []);
+							thinkingDelta = { ...thinkingDelta, text: [...existingText, extractedThinkingText] };
+						} else {
+							thinkingDelta = { text: extractedThinkingText };
+						}
+					}
 
 					// Once we observe any thinking text or an id in this batch, keep the flag true
 					thinkingFound ||= !!(thinkingDelta?.text || thinkingDelta?.id);

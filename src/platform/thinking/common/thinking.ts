@@ -26,6 +26,9 @@ export interface RawThinkingDelta {
 	thinking?: string;
 	signature?: string;
 
+	// Ollama native thinking field (OpenAI-compatible endpoint)
+	thinking_content?: string;
+
 	// OpenRouter reasoning_details format
 	reasoning_details?: Array<{
 		type: string;

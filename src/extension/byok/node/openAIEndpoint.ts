@@ -4,18 +4,22 @@
  *--------------------------------------------------------------------------------------------*/
 import type { CancellationToken } from 'vscode';
 import { IChatMLFetcher } from '../../../platform/chat/common/chatMLFetcher';
-import { ChatFetchResponseType, ChatResponse } from '../../../platform/chat/common/commonTypes';
+import { ChatFetchResponseType, ChatLocation, ChatResponse } from '../../../platform/chat/common/commonTypes';
 import { IConfigurationService } from '../../../platform/configuration/common/configurationService';
 import { IDomainService } from '../../../platform/endpoint/common/domainService';
 import { IChatModelInformation } from '../../../platform/endpoint/common/endpointProvider';
-import { ChatEndpoint } from '../../../platform/endpoint/node/chatEndpoint';
+import { ChatEndpoint, defaultChatResponseProcessor } from '../../../platform/endpoint/node/chatEndpoint';
 import { ILogService } from '../../../platform/log/common/logService';
-import { isOpenAiFunctionTool } from '../../../platform/networking/common/fetch';
+import { FinishedCallback, isOpenAiFunctionTool } from '../../../platform/networking/common/fetch';
 import { createCapiRequestBody, IChatEndpoint, ICreateEndpointBodyOptions, IEndpointBody, IMakeChatRequestOptions } from '../../../platform/networking/common/networking';
-import { RawMessageConversionCallback } from '../../../platform/networking/common/openai';
+import { Response } from '../../../platform/networking/common/fetcherService';
+import { ChatCompletion, RawMessageConversionCallback } from '../../../platform/networking/common/openai';
 import { IChatWebSocketManager } from '../../../platform/networking/node/chatWebSocketManager';
 import { IExperimentationService } from '../../../platform/telemetry/common/nullExperimentationService';
+import { ITelemetryService } from '../../../platform/telemetry/common/telemetry';
+import { TelemetryData } from '../../../platform/telemetry/common/telemetryData';
 import { ITokenizerProvider } from '../../../platform/tokenizer/node/tokenizer';
+import { AsyncIterableObject } from '../../../util/vs/base/common/async';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 
 function hydrateBYOKErrorMessages(response: ChatResponse): ChatResponse {
@@ -323,5 +327,40 @@ export class OpenAIEndpoint extends ChatEndpoint {
 		const modifiedOptions: IMakeChatRequestOptions = { ...options, ignoreStatefulMarker: false };
 		const response = await super.makeChatRequest2(modifiedOptions, token);
 		return hydrateBYOKErrorMessages(response);
+	}
+}
+
+/**
+ * OpenAI-compatible endpoint for Ollama that adds support for thinking/reasoning display.
+ * Handles both:
+ *  - `<think>` tags embedded in `delta.content` (all Ollama versions)
+ *  - Native `thinking_content` field in the delta (newer Ollama versions)
+ */
+export class OllamaOpenAIEndpoint extends OpenAIEndpoint {
+	override async processResponseFromChatEndpoint(
+		telemetryService: ITelemetryService,
+		logService: ILogService,
+		response: Response,
+		expectedNumChoices: number,
+		finishCallback: FinishedCallback,
+		telemetryData: TelemetryData,
+		cancellationToken?: CancellationToken,
+		_location?: ChatLocation
+	): Promise<AsyncIterableObject<ChatCompletion>> {
+		return defaultChatResponseProcessor(
+			telemetryService,
+			logService,
+			response,
+			expectedNumChoices,
+			finishCallback,
+			telemetryData,
+			cancellationToken,
+			{ extractThinkTags: true }
+		);
+	}
+
+	override cloneWithTokenOverride(modelMaxPromptTokens: number): IChatEndpoint {
+		const newModelInfo = { ...this.modelMetadata, maxInputTokens: modelMaxPromptTokens };
+		return this.instantiationService.createInstance(OllamaOpenAIEndpoint, newModelInfo, this._apiKey, this._modelUrl);
 	}
 }

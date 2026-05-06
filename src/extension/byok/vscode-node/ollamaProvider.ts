@@ -10,7 +10,7 @@ import { IExperimentationService } from '../../../platform/telemetry/common/null
 import { ErrorUtils } from '../../../util/common/errors';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { byokKnownModelsToAPIInfo, resolveModelInfo } from '../common/byokProvider';
-import { OpenAIEndpoint } from '../node/openAIEndpoint';
+import { OllamaOpenAIEndpoint } from '../node/openAIEndpoint';
 import { AbstractOpenAICompatibleLMProvider, LanguageModelChatConfiguration, OpenAICompatibleLanguageModelChatInformation } from './abstractLanguageModelChatProvider';
 import { IBYOKStorageService } from './byokStorageService';
 
@@ -112,7 +112,8 @@ export class OllamaLMProvider extends AbstractOpenAICompatibleLMProvider<OllamaC
 					maxOutputTokens: modelInfo.capabilities.limits?.max_output_tokens ?? 4096,
 					name: modelInfo.name,
 					toolCalling: !!modelInfo.capabilities.supports.tool_calls,
-					vision: !!modelInfo.capabilities.supports.vision
+					vision: !!modelInfo.capabilities.supports.vision,
+					thinking: !!modelInfo.capabilities.supports.thinking
 				};
 			}
 
@@ -134,10 +135,10 @@ export class OllamaLMProvider extends AbstractOpenAICompatibleLMProvider<OllamaC
 		return configuration?.url ?? 'http://localhost:11434';
 	}
 
-	protected override async createOpenAIEndPoint(model: OpenAICompatibleLanguageModelChatInformation<OllamaConfig>): Promise<OpenAIEndpoint> {
+	protected override async createOpenAIEndPoint(model: OpenAICompatibleLanguageModelChatInformation<OllamaConfig>): Promise<OllamaOpenAIEndpoint> {
 		const modelInfo = this.getModelInfo(model.id, model.url);
 		const url = `${model.url}/v1/chat/completions`;
-		return this._instantiationService.createInstance(OpenAIEndpoint, modelInfo, model.configuration?.apiKey ?? '', url);
+		return this._instantiationService.createInstance(OllamaOpenAIEndpoint, modelInfo, model.configuration?.apiKey ?? '', url);
 	}
 
 	private async _getOllamaModelInfo(ollamaBaseUrl: string, modelId: string): Promise<IChatModelInformation> {
@@ -149,7 +150,8 @@ export class OllamaLMProvider extends AbstractOpenAICompatibleLMProvider<OllamaC
 			maxOutputTokens: outputTokens,
 			maxInputTokens: contextWindow - outputTokens,
 			vision: modelInfo.capabilities.includes('vision'),
-			toolCalling: modelInfo.capabilities.includes('tools')
+			toolCalling: modelInfo.capabilities.includes('tools'),
+			thinking: modelInfo.capabilities.includes('thinking')
 		};
 
 		return resolveModelInfo(modelId, this._name, this._knownModels, modelCapabilities);
