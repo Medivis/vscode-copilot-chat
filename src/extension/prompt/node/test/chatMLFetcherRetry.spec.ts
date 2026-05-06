@@ -21,6 +21,7 @@ import { ElectronFetchErrorChromiumDetails, ILogService } from '../../../../plat
 import { FinishedCallback } from '../../../../platform/networking/common/fetch';
 import { IFetcherService, IHeaders, Response } from '../../../../platform/networking/common/fetcherService';
 import { IChatEndpoint } from '../../../../platform/networking/common/networking';
+import { FinishedCompletionReason } from '../../../../platform/networking/common/openai';
 import { NullChatWebSocketManager } from '../../../../platform/networking/node/chatWebSocketManager';
 import { NoopOTelService } from '../../../../platform/otel/common/noopOtelService';
 import { resolveOTelConfig } from '../../../../platform/otel/common/otelConfig';
@@ -356,6 +357,58 @@ describe('ChatMLFetcherImpl retry logic', () => {
 			expect(result.type).toBe(ChatFetchResponseType.NetworkError);
 			if (result.type === ChatFetchResponseType.NetworkError) {
 				expect(result.isNetworkProcessCrash).toBeUndefined();
+			}
+		});
+	});
+
+	describe('ClientDone finish reason (OpenRouter / providers that omit finish_reason)', () => {
+		it('treats ClientDone as a successful response', async () => {
+			// Some providers (e.g. OpenRouter) send [DONE] without a prior
+			// finish_reason: "stop" chunk. The SSE processor emits ClientDone in
+			// that case. Verify that processSuccessfulResponse treats it as success
+			// rather than returning RESPONSE_CONTAINED_NO_CHOICES.
+			const clientDoneEndpoint = {
+				...endpoint,
+				processResponseFromChatEndpoint: async (_telemetryService: ITelemetryService, _logService: ILogService, response: Response, _expectedNumChoices: number, finishedCb: FinishedCallback, telemetryData: TelemetryData, _cancellationToken?: CancellationToken) => {
+					const text = await response.text();
+					if (finishedCb) {
+						await finishedCb(text, 0, { text });
+					}
+					return {
+						[Symbol.asyncIterator]: async function* () {
+							yield {
+								message: { role: Raw.ChatRole.Assistant, content: [{ type: Raw.ChatCompletionContentPartKind.Text, text }] },
+								choiceIndex: 0,
+								requestId: {
+									headerRequestId: 'test-request-id',
+									gitHubRequestId: '',
+									completionId: '',
+									created: 0,
+									serverExperiments: '',
+									deploymentId: '',
+								},
+								tokens: [],
+								usage: undefined,
+								model: 'test-model',
+								blockFinished: false,
+								finishReason: FinishedCompletionReason.ClientDone,
+								telemetryData: telemetryData,
+							};
+						}
+					};
+				},
+			} as unknown as IChatEndpoint;
+
+			mockFetcherService.queueResponse(createSuccessResponse('Hello from OpenRouter!'));
+
+			const result = await fetcher.fetchMany(
+				{ ...createBaseOpts(), endpoint: clientDoneEndpoint },
+				cancellationTokenSource.token,
+			);
+
+			expect(result.type).toBe(ChatFetchResponseType.Success);
+			if (result.type === ChatFetchResponseType.Success) {
+				expect(result.value[0]).toContain('Hello from OpenRouter!');
 			}
 		});
 	});

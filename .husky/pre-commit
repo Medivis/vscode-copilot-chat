@@ -1,3 +1,3 @@
 set -e
 
-npx lint-staged
+sh ./node_modules/.bin/lint-staged

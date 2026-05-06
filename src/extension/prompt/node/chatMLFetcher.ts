@@ -1737,7 +1737,10 @@ export class ChatMLFetcherImpl extends AbstractChatMLFetcher {
 				completions.push(chatCompletion);
 			}
 		}
-		const successFinishReasons = new Set([FinishedCompletionReason.Stop, FinishedCompletionReason.ClientTrimmed, FinishedCompletionReason.FunctionCall, FinishedCompletionReason.ToolCalls]);
+		// ClientDone is included because some providers (e.g. OpenRouter) send [DONE] without
+		// an explicit finish_reason in the stream. The SSE processor emits ClientDone in that
+		// case, which represents a valid completed response.
+		const successFinishReasons = new Set([FinishedCompletionReason.Stop, FinishedCompletionReason.ClientTrimmed, FinishedCompletionReason.FunctionCall, FinishedCompletionReason.ToolCalls, FinishedCompletionReason.ClientDone]);
 		const successfulCompletions = completions.filter(c => successFinishReasons.has(c.finishReason));
 		if (successfulCompletions.length >= 1) {
 			return {
